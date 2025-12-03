@@ -1,26 +1,447 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Import fonts - JetBrains Mono for TUI aesthetic */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --color-bg: #0a0f1a;
+  --color-bg-secondary: #111827;
+  --color-bg-tertiary: #1f2937;
+  --color-border: #374151;
+  --color-text: #f9fafb;
+  --color-text-secondary: #9ca3af;
+  --color-text-muted: #6b7280;
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2563eb;
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  --color-info: #06b6d4;
+  --color-cyan: #22d3ee;
+  --color-magenta: #e879f9;
+  --glow-cyan: 0 0 20px rgba(34, 211, 238, 0.3);
+  --glow-magenta: 0 0 20px rgba(232, 121, 249, 0.3);
+  --glow-green: 0 0 20px rgba(16, 185, 129, 0.3);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bg);
+  color: var(--color-text);
+  min-height: 100vh;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Utility classes */
+@layer components {
+  .card {
+    @apply bg-gray-900/90 border border-gray-800 rounded-xl;
+  }
+
+  .card-glow {
+    @apply card relative overflow-hidden;
+  }
+
+  .card-glow::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: var(--color-cyan);
+    opacity: 0.3;
+  }
+
+  .tui-box {
+    @apply relative;
+    border: 1px solid var(--color-border);
+    background: rgba(17, 24, 39, 0.95);
+  }
+
+  .tui-box::before {
+    content: '┌' attr(data-title) '┐';
+    position: absolute;
+    top: -0.7em;
+    left: 1em;
+    background: var(--color-bg);
+    padding: 0 0.5em;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--color-cyan);
+    letter-spacing: 0.05em;
+  }
+
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200;
+  }
+
+  .btn-primary {
+    @apply bg-cyan-600 hover:bg-cyan-700 text-white;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-800 hover:bg-gray-700 text-gray-100 border border-gray-700;
+  }
+
+  .btn-ghost {
+    @apply bg-transparent hover:bg-gray-800 text-gray-300;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-all;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply bg-emerald-500/20 text-emerald-400;
+  }
+
+  .badge-warning {
+    @apply bg-amber-500/20 text-amber-400;
+  }
+
+  .badge-error {
+    @apply bg-red-500/20 text-red-400;
+  }
+
+  .badge-info {
+    @apply bg-blue-500/20 text-blue-400;
+  }
+
+  .stat-card {
+    @apply card p-4 flex flex-col gap-1;
+  }
+
+  .stat-label {
+    @apply text-sm text-gray-400 font-medium;
+  }
+
+  .stat-value {
+    @apply text-2xl font-bold text-white;
+  }
+
+  .stat-change {
+    @apply text-xs flex items-center gap-1;
+  }
+
+  .chart-container {
+    @apply card p-4;
+  }
+
+  .table-row {
+    @apply border-b border-gray-800 hover:bg-gray-800/50 transition-colors;
+  }
+}
+
+/* Animation utilities */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-tertiary) 25%,
+    var(--color-border) 50%,
+    var(--color-bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+/* Status indicator pulse */
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-pulse {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+/* Monospace for numbers */
+.font-mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   TUI AESTHETIC ANIMATIONS & EFFECTS
+   ============================================ */
+
+/* Scanline effect overlay */
+.scanlines::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.03) 2px,
+    rgba(0, 0, 0, 0.03) 4px
+  );
+  pointer-events: none;
+}
+
+/* CRT glow effect */
+.crt-glow {
+  text-shadow: 0 0 5px currentColor, 0 0 10px currentColor;
+}
+
+/* Typing cursor blink */
+@keyframes cursor-blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+.cursor-blink::after {
+  content: '█';
+  animation: cursor-blink 1s step-end infinite;
+  color: var(--color-cyan);
+}
+
+/* Matrix-style data flow */
+@keyframes data-flow {
+  0% { transform: translateY(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+
+/* Chart line draw animation */
+@keyframes draw-line {
+  from { stroke-dashoffset: 1000; }
+  to { stroke-dashoffset: 0; }
+}
+
+.animate-draw-line {
+  stroke-dasharray: 1000;
+  animation: draw-line 1.5s ease-out forwards;
+}
+
+/* Fade in up animation */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.4s ease-out forwards;
+}
+
+/* Staggered animation delays */
+.animate-delay-100 { animation-delay: 100ms; }
+.animate-delay-200 { animation-delay: 200ms; }
+.animate-delay-300 { animation-delay: 300ms; }
+.animate-delay-400 { animation-delay: 400ms; }
+
+/* Number counter animation */
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-count {
+  animation: count-up 0.5s ease-out forwards;
+}
+
+/* Glow pulse animation */
+@keyframes glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 5px var(--color-cyan), 0 0 10px transparent;
+    border-color: rgba(34, 211, 238, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 10px var(--color-cyan), 0 0 20px rgba(34, 211, 238, 0.3);
+    border-color: rgba(34, 211, 238, 0.6);
+  }
+}
+
+.glow-pulse {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Bar grow animation */
+@keyframes bar-grow {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+.animate-bar-grow {
+  transform-origin: bottom;
+  animation: bar-grow 0.6s ease-out forwards;
+}
+
+/* Donut segment animation */
+@keyframes donut-fill {
+  from { stroke-dashoffset: 500; }
+  to { stroke-dashoffset: var(--offset); }
+}
+
+.animate-donut {
+  animation: donut-fill 1s ease-out forwards;
+}
+
+/* Donut segment grow animation */
+@keyframes donut-segment {
+  from {
+    stroke-dasharray: 0 1000;
+    opacity: 0;
+  }
+  to {
+    stroke-dasharray: inherit;
+    opacity: 1;
+  }
+}
+
+.animate-donut-segment {
+  animation: donut-segment 0.8s ease-out forwards;
+}
+
+/* Sparkle effect */
+@keyframes sparkle {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+
+.sparkle {
+  animation: sparkle 1.5s ease-in-out infinite;
+}
+
+/* Terminal typing effect */
+@keyframes terminal-type {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+.terminal-text {
+  font-family: 'JetBrains Mono', monospace;
+  overflow: hidden;
+  white-space: nowrap;
+  animation: terminal-type 0.5s steps(20) forwards;
+}
+
+/* Grid background pattern */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(34, 211, 238, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 211, 238, 0.03) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Gradient border effect */
+.gradient-border {
+  position: relative;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-magenta));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.5;
+}
+
+/* Hover lift effect */
+.hover-lift {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+}
+
+/* Time range badge */
+.time-badge {
+  @apply inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono;
+  background: linear-gradient(135deg, rgba(34, 211, 238, 0.1), rgba(232, 121, 249, 0.1));
+  border: 1px solid rgba(34, 211, 238, 0.2);
+  color: var(--color-cyan);
+}
+
+.time-badge::before {
+  content: '⏱';
+  font-size: 0.7rem;
+}
+
+/* Status dot animation */
+@keyframes status-dot {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.5); opacity: 0.5; }
+}
+
+.status-dot-animate {
+  animation: status-dot 2s ease-in-out infinite;
 }
