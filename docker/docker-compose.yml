@@ -1,0 +1,216 @@
+# =============================================================================
+# AEGIS - Docker Compose Configuration
+# =============================================================================
+# Development environment with PostgreSQL, Redis, ML Service, and supporting services
+#
+# Usage:
+#   docker-compose up -d          # Start all services
+#   docker-compose down           # Stop all services
+#   docker-compose logs -f        # Follow logs
+#   docker-compose ps             # Check service status
+#
+# Profiles:
+#   docker-compose --profile dev-tools up -d      # Include dev tools (pgAdmin, Redis Commander)
+#   docker-compose --profile mock-backends up -d  # Include mock backend services
+#   docker-compose --profile ml up -d             # Include ML service
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # PostgreSQL Database
+  # ===========================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: aegis-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: aegis
+      POSTGRES_USER: aegis_user
+      POSTGRES_PASSWORD: dev_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U aegis_user -d aegis']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - aegis-network
+
+  # ===========================================================================
+  # Redis Cache
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: aegis-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - aegis-network
+
+  # ===========================================================================
+  # AEGIS ML Service - Anomaly Detection & Rate Limit Optimization
+  # ===========================================================================
+  ml-service:
+    build:
+      context: ../aegis-ml
+      dockerfile: Dockerfile
+    image: aegis-ml:latest
+    container_name: aegis-ml-service
+    restart: unless-stopped
+    environment:
+      ML_SERVICE_PORT: 5000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: aegis
+      POSTGRES_USER: aegis_user
+      POSTGRES_PASSWORD: dev_password
+      MODEL_PATH: /app/data/models
+      DATA_PATH: /app/data
+      FLASK_DEBUG: 'false'
+      CONTAMINATION: '0.1'
+      ANOMALY_THRESHOLD: '-0.5'
+    ports:
+      - '5000:5000'
+    volumes:
+      - ml_models:/app/data/models
+      - ml_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:5000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - aegis-network
+    profiles:
+      - ml
+
+  # ===========================================================================
+  # Redis Commander (Redis GUI) - Development Only
+  # ===========================================================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: aegis-redis-commander
+    restart: unless-stopped
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    ports:
+      - '8081:8081'
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - aegis-network
+    profiles:
+      - dev-tools
+
+  # ===========================================================================
+  # pgAdmin (PostgreSQL GUI) - Development Only
+  # ===========================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: aegis-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@aegis.local
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - '8082:80'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - aegis-network
+    profiles:
+      - dev-tools
+
+  # ===========================================================================
+  # Mock Backend Services (for testing)
+  # ===========================================================================
+  mock-api-service:
+    image: mendhak/http-https-echo:latest
+    container_name: aegis-mock-api
+    restart: unless-stopped
+    environment:
+      HTTP_PORT: 3000
+      HTTPS_PORT: 3443
+    ports:
+      - '3000:3000'
+    networks:
+      - aegis-network
+    profiles:
+      - mock-backends
+
+  mock-auth-service:
+    image: mendhak/http-https-echo:latest
+    container_name: aegis-mock-auth
+    restart: unless-stopped
+    environment:
+      HTTP_PORT: 3001
+      HTTPS_PORT: 3444
+    ports:
+      - '3001:3001'
+    networks:
+      - aegis-network
+    profiles:
+      - mock-backends
+
+  mock-users-service:
+    image: mendhak/http-https-echo:latest
+    container_name: aegis-mock-users
+    restart: unless-stopped
+    environment:
+      HTTP_PORT: 3002
+      HTTPS_PORT: 3445
+    ports:
+      - '3002:3002'
+    networks:
+      - aegis-network
+    profiles:
+      - mock-backends
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  aegis-network:
+    driver: bridge
+    name: aegis-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    name: aegis-postgres-data
+  redis_data:
+    name: aegis-redis-data
+  pgadmin_data:
+    name: aegis-pgadmin-data
+  ml_models:
+    name: aegis-ml-models
+  ml_data:
+    name: aegis-ml-data

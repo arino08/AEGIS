@@ -1,0 +1,490 @@
+# =============================================================================
+# AEGIS - Intelligent API Gateway Configuration
+# =============================================================================
+# This is the main configuration file for AEGIS gateway.
+# Environment variables can override these settings using the format:
+# AEGIS_<SECTION>_<KEY> (e.g., AEGIS_SERVER_PORT=8080)
+
+# -----------------------------------------------------------------------------
+# Server Configuration
+# -----------------------------------------------------------------------------
+server:
+  port: 8080
+  host: 0.0.0.0
+
+# -----------------------------------------------------------------------------
+# Backend Services
+# -----------------------------------------------------------------------------
+# Define your upstream backend services here.
+# Each backend has:
+#   - name: A unique identifier for the backend
+#   - url: The base URL of the backend service
+#   - routes: Array of route patterns this backend handles
+#   - healthCheck: (optional) Health check configuration
+#   - timeout: (optional) Request timeout in milliseconds
+#   - retries: (optional) Number of retry attempts
+#   - weight: (optional) Load balancing weight (default: 1)
+
+backends:
+  - name: api-service
+    url: http://localhost:3000
+    routes:
+      - /api/*
+      - /api/**
+    healthCheck:
+      path: /health
+      intervalMs: 30000
+      timeoutMs: 5000
+      unhealthyThreshold: 3
+      healthyThreshold: 2
+    timeout: 30000
+    retries: 2
+    weight: 1
+
+  - name: auth-service
+    url: http://localhost:3001
+    routes:
+      - /auth/*
+      - /auth/**
+    healthCheck:
+      path: /health
+      intervalMs: 30000
+      timeoutMs: 5000
+      unhealthyThreshold: 3
+      healthyThreshold: 2
+    timeout: 10000
+    retries: 1
+    weight: 1
+
+  - name: users-service
+    url: http://localhost:3002
+    routes:
+      - /users/*
+      - /users/**
+    timeout: 30000
+    retries: 2
+
+# -----------------------------------------------------------------------------
+# PostgreSQL Database Configuration
+# -----------------------------------------------------------------------------
+postgres:
+  host: localhost
+  port: 5432
+  database: aegis
+  user: aegis_user
+  password: dev_password
+  ssl: false
+  poolMin: 2
+  poolMax: 10
+
+# -----------------------------------------------------------------------------
+# Redis Configuration
+# -----------------------------------------------------------------------------
+redis:
+  host: localhost
+  port: 6379
+  password: ''
+  db: 0
+  tls: false
+
+# -----------------------------------------------------------------------------
+# Rate Limiting Configuration
+# -----------------------------------------------------------------------------
+rateLimit:
+  enabled: true
+
+  # Default algorithm: token-bucket, sliding-window, or fixed-window
+  defaultAlgorithm: token-bucket
+
+  # Default limits (used when no specific rule matches)
+  defaultRequests: 100
+  defaultWindowSeconds: 60
+
+  # Key generation strategy: ip, user, api-key, ip-endpoint, user-endpoint, composite
+  keyStrategy: composite
+
+  # Redis key prefix
+  keyPrefix: 'ratelimit:'
+
+  # Include rate limit headers in responses
+  includeHeaders: true
+
+  # Custom error message for 429 responses
+  errorMessage: 'Rate limit exceeded. Please try again later.'
+
+  # Bypass configuration - requests matching these skip rate limiting
+  bypass:
+    ips:
+      - '127.0.0.1'
+    userIds: []
+    apiKeys: []
+    paths:
+      - /health
+      - /healthz
+      - /ready
+      - /metrics
+    internal: true # Bypass for private IP ranges (10.x, 172.16.x, 192.168.x)
+
+  # Tier-based default limits
+  tierLimits:
+    anonymous:
+      requests: 60
+      windowSeconds: 60
+    free:
+      requests: 100
+      windowSeconds: 60
+    basic:
+      requests: 500
+      windowSeconds: 60
+    pro:
+      requests: 2000
+      windowSeconds: 60
+    enterprise:
+      requests: 10000
+      windowSeconds: 60
+    unlimited:
+      requests: 1000000
+      windowSeconds: 60
+
+  # Algorithm-specific configuration
+  algorithmConfig:
+    tokenBucket:
+      maxTokens: 100
+      refillRate: 10 # tokens per second
+    slidingWindow:
+      windowSeconds: 60
+      maxRequests: 100
+    fixedWindow:
+      windowSeconds: 60
+      maxRequests: 100
+
+  # Rate limit rules (applied in order of priority, higher priority first)
+  # More specific rules with higher match scores take precedence
+  rules:
+    - id: api-public
+      name: 'Public API Endpoints'
+      priority: 10
+      enabled: true
+      match:
+        endpoint: '/api/public/**'
+        endpointMatchType: glob
+      rateLimit:
+        algorithm: token-bucket
+        requests: 200
+        windowSeconds: 60
+
+    - id: api-admin
+      name: 'Admin API Endpoints'
+      priority: 20
+      enabled: true
+      match:
+        endpoint: '/api/admin/**'
+        endpointMatchType: glob
+        tiers:
+          - pro
+          - enterprise
+      rateLimit:
+        algorithm: sliding-window
+        requests: 50
+        windowSeconds: 60
+
+    - id: auth-login
+      name: 'Login Rate Limit'
+      priority: 100
+      enabled: true
+      match:
+        endpoint: '/auth/login'
+        endpointMatchType: exact
+        methods:
+          - POST
+      rateLimit:
+        algorithm: sliding-window
+        requests: 10
+        windowSeconds: 60
+
+    - id: auth-register
+      name: 'Registration Rate Limit'
+      priority: 100
+      enabled: true
+      match:
+        endpoint: '/auth/register'
+        endpointMatchType: exact
+        methods:
+          - POST
+      rateLimit:
+        algorithm: sliding-window
+        requests: 5
+        windowSeconds: 300 # 5 per 5 minutes
+
+    - id: api-search
+      name: 'Search Endpoint Rate Limit'
+      priority: 50
+      enabled: true
+      match:
+        endpoint: '/api/search'
+        endpointMatchType: exact
+      rateLimit:
+        algorithm: token-bucket
+        requests: 30
+        windowSeconds: 60
+        burst: 10
+
+    - id: api-create-order
+      name: 'Order Creation Rate Limit'
+      priority: 50
+      enabled: true
+      match:
+        endpoint: '/api/create-order'
+        endpointMatchType: exact
+        methods:
+          - POST
+      rateLimit:
+        algorithm: fixed-window
+        requests: 10
+        windowSeconds: 60
+
+# -----------------------------------------------------------------------------
+# Proxy Configuration
+# -----------------------------------------------------------------------------
+proxy:
+  timeoutMs: 30000
+  retryAttempts: 3
+  retryDelayMs: 1000
+
+# -----------------------------------------------------------------------------
+# Logging Configuration
+# -----------------------------------------------------------------------------
+logging:
+  level: info # error, warn, info, http, debug
+  format: json # json, pretty
+  fileEnabled: false
+  filePath: ./logs/aegis.log
+
+# -----------------------------------------------------------------------------
+# Metrics & Monitoring
+# -----------------------------------------------------------------------------
+metrics:
+  enabled: true
+  flushIntervalMs: 5000
+  batchSize: 100
+  retentionDays: 30
+
+  # Which metrics to collect
+  enabledMetrics:
+    requests: true
+    rateLimits: true
+    backends: true
+    system: true
+
+  # Sampling configuration (for high-traffic environments)
+  sampling:
+    enabled: false
+    rate: 1.0 # 1.0 = 100%, 0.1 = 10%
+
+# -----------------------------------------------------------------------------
+# Dashboard API Configuration
+# -----------------------------------------------------------------------------
+dashboard:
+  enabled: true
+  basePath: /api
+  cors: true
+  allowedOrigins:
+    - '*'
+
+  # Rate limiting for dashboard API
+  rateLimit: true
+  rateLimitPerMinute: 60
+
+  # WebSocket configuration for real-time updates
+  websocket:
+    enabled: true
+    path: /ws/metrics
+    updateIntervalMs: 1000
+    maxConnectionsPerIp: 10
+
+  # Authentication (optional)
+  requireAuth: false
+  apiKeyHeader: X-API-Key
+
+# -----------------------------------------------------------------------------
+# Alerts Configuration
+# -----------------------------------------------------------------------------
+alerts:
+  enabled: false
+  checkIntervalMs: 60000
+  defaultCooldownMs: 300000 # 5 minutes between repeated alerts
+  maxActiveAlerts: 100
+  retentionDays: 90
+
+  # Alert notification channels
+  channels:
+    # Slack integration
+    slack:
+      enabled: false
+      webhookUrl: ''
+      channel: '#alerts'
+      username: 'AEGIS'
+      iconEmoji: ':shield:'
+
+    # Webhook integration
+    webhook:
+      enabled: false
+      url: ''
+      method: POST
+      timeout: 5000
+
+  # Default alert rules (can be extended via API)
+  rules:
+    - id: high-latency
+      name: 'High p95 Latency'
+      enabled: true
+      severity: warning
+      condition:
+        metric: latency_p95
+        operator: '>'
+        threshold: 1000 # ms
+        window: '5m'
+      actions:
+        - type: log
+        # - type: slack
+
+    - id: high-error-rate
+      name: 'High Error Rate'
+      enabled: true
+      severity: critical
+      condition:
+        metric: error_rate
+        operator: '>'
+        threshold: 5 # percentage
+        window: '5m'
+      actions:
+        - type: log
+        # - type: slack
+
+# -----------------------------------------------------------------------------
+# Authentication & Authorization Configuration
+# -----------------------------------------------------------------------------
+auth:
+  enabled: false  # Set to true to enable authentication
+  defaultAuthType: api-key
+  allowAnonymous: true
+
+  # Paths that don't require authentication
+  anonymousPaths:
+    - /health
+    - /healthz
+    - /ready
+    - /_aegis/*
+    - /api/public/*
+
+  # API Key authentication
+  apiKey:
+    enabled: true
+    headerName: X-API-Key  # or "Authorization" with prefix
+    prefix: ''  # e.g., "Bearer " or "ApiKey "
+    hashAlgorithm: sha256
+
+  # JWT authentication
+  jwt:
+    enabled: false
+    # Use secret for HS256 algorithms
+    # secret: 'your-super-secret-key-at-least-32-characters'
+    # Use publicKey for RS256/ES256 algorithms
+    # publicKey: |
+    #   -----BEGIN PUBLIC KEY-----
+    #   ...
+    #   -----END PUBLIC KEY-----
+    algorithm: HS256
+    issuer: 'aegis'
+    audience: 'aegis-api'
+    clockTolerance: 30  # seconds
+
+  # OAuth 2.0 / OIDC integration
+  oauth:
+    provider: custom  # auth0, okta, google, azure, custom
+    issuer: 'https://your-issuer.com'
+    audience: 'your-audience'
+    jwksUri: 'https://your-issuer.com/.well-known/jwks.json'
+    # clientId: 'your-client-id'
+    # clientSecret: 'your-client-secret'
+    # tokenEndpoint: 'https://your-issuer.com/oauth/token'
+
+  # Role-Based Access Control
+  rbac:
+    enabled: false
+    defaultRole: user
+    superAdminRoles:
+      - super-admin
+
+    roles:
+      - name: admin
+        description: 'Administrator with full access'
+        permissions:
+          - resource: '/**'
+            actions: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
+        inherits: []
+
+      - name: editor
+        description: 'Can read and modify content'
+        permissions:
+          - resource: '/api/**'
+            actions: ['GET', 'POST', 'PUT', 'PATCH']
+          - resource: '/users/profile'
+            actions: ['GET', 'PUT']
+        inherits:
+          - viewer
+
+      - name: viewer
+        description: 'Read-only access'
+        permissions:
+          - resource: '/api/**'
+            actions: ['GET']
+          - resource: '/users/profile'
+            actions: ['GET']
+
+      - name: user
+        description: 'Basic user access'
+        permissions:
+          - resource: '/api/public/**'
+            actions: ['GET', 'POST']
+          - resource: '/users/profile'
+            actions: ['GET', 'PUT']
+
+# -----------------------------------------------------------------------------
+# Request/Response Transformation Configuration
+# -----------------------------------------------------------------------------
+transform:
+  request:
+    headers:
+      add: {}  # Headers to add to requests
+        # X-Custom-Header: 'custom-value'
+      remove: []  # Headers to remove from requests
+        # - X-Debug
+      rename: {}  # Headers to rename
+        # Old-Header: New-Header
+    injectUserInfo: true    # Add X-User-ID, X-User-Email, X-User-Roles
+    injectRequestId: true   # Add X-Request-ID
+    injectForwardedHeaders: true  # Add X-Forwarded-For, X-Forwarded-Proto
+
+  response:
+    headers:
+      add:  # Headers to add to responses
+        X-Gateway: aegis
+      remove: []  # Additional headers to remove
+      rename: {}
+    # Sensitive headers to always strip from responses
+    sensitiveHeaders:
+      - X-Database-Server
+      - X-DB-Server
+      - X-Database-Host
+      - X-Internal-Token
+      - X-Internal-Key
+      - X-Service-Token
+      - X-Debug-Info
+      - X-Debug-Trace
+      - X-API-Key
+      - X-Secret-Key
+      - Server
+      - X-Powered-By
+      - X-AspNet-Version
+      - X-AspNetMvc-Version
