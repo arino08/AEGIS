@@ -173,6 +173,68 @@ export interface GatewayStatus {
   };
 }
 
+// Health Check Types
+export type HealthStatus = 'healthy' | 'unhealthy' | 'degraded' | 'unknown';
+export type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+
+export interface ServiceHealth {
+  name: string;
+  url: string;
+  status: HealthStatus;
+  lastCheck: string | null;
+  lastSuccess: string | null;
+  lastError: string | null;
+  responseTimeMs: number | null;
+  consecutiveFailures: number;
+  consecutiveSuccesses: number;
+  checks: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+}
+
+export interface CircuitBreakerStats {
+  state: CircuitState;
+  failures: number;
+  successes: number;
+  consecutiveFailures: number;
+  consecutiveSuccesses: number;
+  lastFailureTime: number | null;
+  lastSuccessTime: number | null;
+  lastStateChange: number;
+  totalRequests: number;
+  failedRequests: number;
+  openCount: number;
+  halfOpenCount: number;
+}
+
+export interface BackendStatus {
+  name: string;
+  url: string;
+  health: ServiceHealth | null;
+  circuitBreaker: {
+    state: CircuitState;
+    stats: CircuitBreakerStats;
+  };
+  isAvailable: boolean;
+}
+
+export interface BackendsSummary {
+  total: number;
+  available: number;
+  unavailable: number;
+  healthy: number;
+  unhealthy: number;
+  degraded: number;
+  circuitOpen: number;
+}
+
+export interface BackendsResponse {
+  summary: BackendsSummary;
+  backends: BackendStatus[];
+}
+
 // Rate Limiting
 export interface RateLimitStatus {
   enabled: boolean;

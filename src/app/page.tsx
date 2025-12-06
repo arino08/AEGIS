@@ -64,6 +64,42 @@ interface Alert {
   triggeredAt: string;
 }
 
+// Health Check Types
+type HealthStatus = 'healthy' | 'unhealthy' | 'degraded' | 'unknown';
+type CircuitState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+
+interface BackendStatus {
+  name: string;
+  url: string;
+  health: {
+    status: HealthStatus;
+    lastCheck: string | null;
+    lastError: string | null;
+    responseTimeMs: number | null;
+    consecutiveFailures: number;
+  } | null;
+  circuitBreaker: {
+    state: CircuitState;
+    stats: {
+      consecutiveFailures: number;
+      openCount: number;
+      lastStateChange: number;
+    };
+  };
+  isAvailable: boolean;
+}
+
+interface BackendsResponse {
+  summary: {
+    total: number;
+    available: number;
+    healthy: number;
+    unhealthy: number;
+    circuitOpen: number;
+  };
+  backends: BackendStatus[];
+}
+
 type TimeRange = '5m' | '15m' | '1h' | '6h' | '24h';
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected';
 
@@ -700,6 +736,7 @@ export default function Dashboard() {
   const [statusData, setStatusData] = useState<StatusDistribution[]>([]);
   const [topEndpoints, setTopEndpoints] = useState<TopEndpoint[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [backendsData, setBackendsData] = useState<BackendsResponse | null>(null);
   const [timeRange, setTimeRange] = useState<TimeRange>('1h');
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('disconnected');
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -711,12 +748,13 @@ export default function Dashboard() {
 
   // Fetch data
   const fetchData = useCallback(async () => {
-    const [overviewRes, latencyRes, statusRes, endpointsRes, alertsRes] = await Promise.all([
+    const [overviewRes, latencyRes, statusRes, endpointsRes, alertsRes, backendsRes] = await Promise.all([
       fetchApi<DashboardOverview>(`/api/metrics/overview?range=${timeRange}`),
       fetchApi<LatencyPoint[]>(`/api/metrics/latency?range=${timeRange}`),
       fetchApi<StatusDistribution[]>(`/api/metrics/status?range=${timeRange}`),
       fetchApi<TopEndpoint[]>(`/api/metrics/endpoints/top?range=${timeRange}&limit=5`),
       fetchApi<Alert[]>('/api/alerts/active'),
+      fetchApi<BackendsResponse>('/api/health/backends'),
     ]);
 
     if (overviewRes) setOverview(overviewRes);
@@ -724,6 +762,7 @@ export default function Dashboard() {
     if (statusRes) setStatusData(statusRes);
     if (endpointsRes) setTopEndpoints(endpointsRes);
     if (alertsRes) setAlerts(alertsRes);
+    if (backendsRes) setBackendsData(backendsRes);
 
     setLastUpdated(new Date());
     setLoading(false);
@@ -1258,6 +1297,78 @@ export default function Dashboard() {
                     </span>
                   </div>
                 </div>
+
+                {/* Backend Services with Circuit Breakers */}
+                {backendsData && backendsData.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-700/50">
+                    <h4 className="text-sm font-semibold text-gray-400 mb-3 font-mono flex items-center gap-2">
+                      <span className="text-cyan-400">⚡</span>
+                      Backend Services & Circuit Breakers
+                    </h4>
+                    <div className="space-y-2">
+                      {backendsData.map((backend) => (
+                        <div
+                          key={backend.name}
+                          className="p-3 bg-gray-800/40 rounded-lg border border-gray-700/50 hover:border-cyan-800/50 transition-colors"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-mono text-sm text-gray-300">{backend.name}</span>
+                            <StatusBadge
+                              status={
+                                backend.status === 'healthy'
+                                  ? 'healthy'
+                                  : backend.status === 'unhealthy'
+                                    ? 'critical'
+                                    : 'degraded'
+                              }
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500">Circuit:</span>
+                              <span
+                                className={`font-mono px-2 py-0.5 rounded ${
+                                  backend.circuitBreaker?.state === 'CLOSED'
+                                    ? 'bg-emerald-900/30 text-emerald-400 border border-emerald-700/50'
+                                    : backend.circuitBreaker?.state === 'OPEN'
+                                      ? 'bg-red-900/30 text-red-400 border border-red-700/50'
+                                      : 'bg-amber-900/30 text-amber-400 border border-amber-700/50'
+                                }`}
+                              >
+                                {backend.circuitBreaker?.state || 'CLOSED'}
+                              </span>
+                            </div>
+                            {backend.responseTime !== undefined && (
+                              <span className="text-gray-500 font-mono">
+                                {backend.responseTime}ms
+                              </span>
+                            )}
+                          </div>
+                          {backend.circuitBreaker?.state === 'OPEN' &&
+                            backend.circuitBreaker.nextAttempt && (
+                              <div className="mt-2 text-xs text-gray-500 font-mono">
+                                Recovery in:{' '}
+                                {Math.max(
+                                  0,
+                                  Math.ceil(
+                                    (new Date(backend.circuitBreaker.nextAttempt).getTime() -
+                                      Date.now()) /
+                                      1000
+                                  )
+                                )}
+                                s
+                              </div>
+                            )}
+                          {backend.lastError && (
+                            <div className="mt-2 text-xs text-red-400/70 font-mono truncate">
+                              {backend.lastError}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
