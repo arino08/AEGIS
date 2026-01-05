@@ -125,12 +125,15 @@ export class MetricsCollector {
     // Start periodic flush
     this.startFlushTimer();
 
+    // Start periodic aggregation (every minute)
+    this.startAggregationTimer();
+
     // Start cleanup timer (every hour)
     this.startCleanupTimer();
   }
 
   /**
-   * Start the periodic flush timer
+   * Start the periodic flask timer
    */
   private startFlushTimer(): void {
     if (this.flushTimer) {
@@ -140,6 +143,19 @@ export class MetricsCollector {
     this.flushTimer = setInterval(() => {
       void this.flush();
     }, this.config.flushIntervalMs);
+  }
+
+  /**
+   * Start the periodic aggregation timer
+   */
+  private startAggregationTimer(): void {
+    // Run aggregation every minute
+    setInterval(
+      () => {
+        void this.aggregate();
+      },
+      60 * 1000
+    );
   }
 
   /**
@@ -509,6 +525,79 @@ export class MetricsCollector {
         count: batch.length,
       });
       throw error;
+    }
+  }
+
+  /**
+   * Aggregate metrics from raw tables to aggregated_metrics
+   */
+  public async aggregate(): Promise<void> {
+    if (!this.db) {
+      return;
+    }
+
+    logger.debug('Starting metrics aggregation');
+
+    try {
+      // Aggregate last 5 minutes of data into 1-minute buckets
+      const sql = `
+        INSERT INTO aggregated_metrics (
+          bucket, bucket_size, metric_name,
+          endpoint, method, backend, status_class,
+          count, sum_value, avg_value, min_value, max_value,
+          p50_value, p95_value, p99_value
+        )
+        SELECT
+          date_trunc('minute', timestamp) as bucket,
+          '1m' as bucket_size,
+          'request_duration' as metric_name,
+          path as endpoint,
+          method,
+          backend,
+          CASE
+            WHEN status_code >= 500 THEN '5xx'
+            WHEN status_code >= 400 THEN '4xx'
+            WHEN status_code >= 300 THEN '3xx'
+            ELSE '2xx'
+          END as status_class,
+          COUNT(*) as count,
+          SUM(duration_ms) as sum_value,
+          AVG(duration_ms) as avg_value,
+          MIN(duration_ms) as min_value,
+          MAX(duration_ms) as max_value,
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY duration_ms) as p50_value,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) as p95_value,
+          PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms) as p99_value
+        FROM request_metrics
+        WHERE timestamp >= NOW() - INTERVAL '5 minutes'
+          AND timestamp < date_trunc('minute', NOW())
+        GROUP BY 1, 4, 5, 6, 7
+        ON CONFLICT (
+          bucket,
+          bucket_size,
+          metric_name,
+          COALESCE(endpoint, ''),
+          COALESCE(method, ''),
+          COALESCE(backend, ''),
+          COALESCE(status_class, '')
+        )
+        DO UPDATE SET
+          count = EXCLUDED.count,
+          sum_value = EXCLUDED.sum_value,
+          avg_value = EXCLUDED.avg_value,
+          min_value = EXCLUDED.min_value,
+          max_value = EXCLUDED.max_value,
+          p50_value = EXCLUDED.p50_value,
+          p95_value = EXCLUDED.p95_value,
+          p99_value = EXCLUDED.p99_value;
+      `;
+
+      await this.db.execute(sql);
+      logger.debug('Metrics aggregation completed');
+    } catch (error) {
+      logger.error('Failed to aggregate metrics', {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
