@@ -11,6 +11,7 @@
 server:
   port: 8000
   host: 0.0.0.0
+  workers: 0 # 0 = all cores, 1 = single process
 
 # -----------------------------------------------------------------------------
 # Backend Services
@@ -255,8 +256,8 @@ proxy:
 # Logging Configuration
 # -----------------------------------------------------------------------------
 logging:
-  level: info # error, warn, info, http, debug
-  format: json # json, pretty
+  level: error # Optimizing for performance
+  format: json
   fileEnabled: false
   filePath: ./logs/aegis.log
 

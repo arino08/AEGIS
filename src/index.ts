@@ -23,28 +23,71 @@ let isShuttingDown = false;
 // Application Startup
 // =============================================================================
 
+// =============================================================================
+// Application Startup
+// =============================================================================
+
+import cluster from 'node:cluster';
+import os from 'node:os';
+
 async function bootstrap(): Promise<void> {
-  logLifecycle('startup', 'AEGIS Gateway starting up...');
+  // Load configuration first to check worker count
+  const configLoader = getConfigLoader();
+  const config: AegisConfig = await configLoader.load();
 
-  try {
-    // Load configuration
-    logLifecycle('startup', 'Loading configuration...');
-    const config: AegisConfig = await loadConfig();
+  // Determine number of workers
+  // 0 = all cores, 1 = single process, >1 = specific count
+  const desiredWorkers = config.server.workers ?? 0;
+  const numCPUs = os.cpus().length;
+  const numWorkers = desiredWorkers === 0 ? numCPUs : desiredWorkers;
 
-    logLifecycle('startup', 'Configuration loaded', {
-      port: config.server.port,
-      host: config.server.host,
-      environment: config.server.nodeEnv,
-      backendsConfigured: config.backends.length,
+  // Handle Master Process
+  if (cluster.isPrimary && numWorkers > 1) {
+    logLifecycle('startup', `AEGIS Gateway Master ${process.pid} starting up...`);
+    logLifecycle('startup', `Clustering enabled: Spawning ${numWorkers} workers`);
+
+    // Fork workers
+    for (let i = 0; i < numWorkers; i++) {
+      cluster.fork();
+    }
+
+    // Handle worker exit
+    cluster.on('exit', (worker, code, signal) => {
+      logLifecycle('warn', `Worker ${worker.process.pid} died (code: ${code}, signal: ${signal})`);
+
+      if (!isShuttingDown) {
+        logLifecycle('info', 'Starting a new worker...');
+        cluster.fork();
+      }
     });
 
+    logLifecycle('ready', `Primary process ${process.pid} is running`);
+
+    // Print banner only once from primary
+    printBanner(config, numWorkers);
+
+    return;
+  }
+
+  // Handle Worker Process (or single process mode)
+  await startWorker(config);
+}
+
+async function startWorker(config: AegisConfig): Promise<void> {
+  const workerType = cluster.isWorker ? `Worker ${process.pid}` : `Single Process ${process.pid}`;
+  logLifecycle('startup', `${workerType} starting up...`);
+
+  try {
     // Initialize storage connections (optional - can run without if not configured)
     try {
       await initializeStorage({
         postgres: config.postgres,
         redis: config.redis,
       });
-      logLifecycle('startup', 'Storage connections established');
+      // Only log storage connection success if single process or first worker (to reduce noise)
+      if (!cluster.isWorker || cluster.worker?.id === 1) {
+        logLifecycle('startup', 'Storage connections established');
+      }
     } catch (storageError) {
       logger.warn('Could not connect to storage services - running in proxy-only mode', {
         error: storageError instanceof Error ? storageError.message : String(storageError),
@@ -55,8 +98,10 @@ async function bootstrap(): Promise<void> {
     gatewayServer = createGatewayServer({ config });
     await gatewayServer.initialize();
 
-    // Enable hot reload if configured
-    if (config.hotReload) {
+    // Enable hot reload if configured (only in single process or primary)
+    // In cluster mode, primary handles restarts, but hot reload of config logic
+    // usually requires IPC. For simplicity, we disable hot reload watcher in workers for now.
+    if (config.hotReload && !cluster.isWorker) {
       const configLoader = getConfigLoader();
       configLoader.startWatching();
     }
@@ -64,17 +109,12 @@ async function bootstrap(): Promise<void> {
     // Start listening for requests
     await gatewayServer.start();
 
-    logLifecycle('ready', '🛡️  AEGIS Gateway is ready to accept connections', {
-      url: `http://${config.server.host}:${config.server.port}`,
-      backends: config.backends.map((b) => ({
-        name: b.name,
-        url: b.url,
-        routes: b.routes.length,
-      })),
-    });
+    if (!cluster.isWorker) {
+       printBanner(config, 1);
+    } else {
+       logLifecycle('ready', `Worker ${process.pid} listening`);
+    }
 
-    // Print startup banner
-    printBanner(config);
   } catch (error) {
     logLifecycle('error', 'Failed to start AEGIS Gateway', {
       error: error instanceof Error ? error.message : String(error),
@@ -152,7 +192,7 @@ process.on('unhandledRejection', (reason, promise) => {
 // Startup Banner
 // =============================================================================
 
-function printBanner(config: AegisConfig): void {
+function printBanner(config: AegisConfig, numWorkers: number): void {
   const banner = `
 ╔═══════════════════════════════════════════════════════════════════╗
 ║                                                                   ║
@@ -173,6 +213,7 @@ function printBanner(config: AegisConfig): void {
 ║    💚 Health:   http://${config.server.host}:${config.server.port}/health                      ║
 ║                                                                   ║
 ║    Environment: ${config.server.nodeEnv.padEnd(12)}                                 ║
+║    Workers:     ${String(numWorkers).padEnd(12)}                                 ║
 ║    Backends:    ${String(config.backends.length).padEnd(12)}                                 ║
 ║                                                                   ║
 ╚═══════════════════════════════════════════════════════════════════╝

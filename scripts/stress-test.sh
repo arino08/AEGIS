@@ -22,7 +22,7 @@
 set -e
 
 # Configuration
-GATEWAY_URL="${GATEWAY_URL:-http://localhost:8080}"
+GATEWAY_URL="${GATEWAY_URL:-http://localhost:8000}"
 CONCURRENCY="${CONCURRENCY:-50}"
 DURATION="${DURATION:-30s}"
 

@@ -38,6 +38,7 @@ export const RuleMatchTypeSchema = z.enum(['exact', 'prefix', 'glob', 'regex']);
 export const ServerConfigSchema = z.object({
   port: z.number().int().min(1).max(65535).default(8080),
   host: z.string().default('0.0.0.0'),
+  workers: z.number().int().min(0).default(0), // 0 = all cores, 1 = single process, >1 = specific count
 });
 
 // =============================================================================
